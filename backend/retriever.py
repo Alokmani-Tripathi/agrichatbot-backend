@@ -1,19 +1,17 @@
 import os
 from dotenv import load_dotenv
 from langchain_pinecone import PineconeVectorStore
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain.retrievers.multi_query import MultiQueryRetriever
-from pinecone import Pinecone
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 load_dotenv()
 
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "agrichatbot")
 
 def get_embeddings():
-    # Uses HuggingFace Inference API — runs on HF servers, zero RAM on Render!
-    return HuggingFaceInferenceAPIEmbeddings(
-        api_key=os.getenv("HF_API_KEY", ""),
-        model_name="BAAI/bge-large-en-v1.5",
+    return HuggingFaceEndpointEmbeddings(
+        model="BAAI/bge-large-en-v1.5",
+        huggingfacehub_api_token=os.getenv("HF_API_KEY", ""),
     )
 
 def get_vectorstore(embeddings):
@@ -25,17 +23,14 @@ def get_vectorstore(embeddings):
 def build_retriever(llm):
     embeddings  = get_embeddings()
     vectorstore = get_vectorstore(embeddings)
-
     base_retriever = vectorstore.as_retriever(
         search_type="mmr",
         search_kwargs={"k": 5, "fetch_k": 10, "lambda_mult": 0.6},
     )
-
     multi_query_retriever = MultiQueryRetriever.from_llm(
         retriever=base_retriever,
         llm=llm,
     )
-
     return multi_query_retriever, vectorstore
 
 def retrieve_with_parent(docs):
