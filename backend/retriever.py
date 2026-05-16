@@ -2,9 +2,6 @@ import os
 from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain.retrievers import ContextualCompressionRetriever
-#from langchain.retrievers.document_compressors import CrossEncoderReranker
-#from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain.retrievers.multi_query import MultiQueryRetriever
 
 load_dotenv()
@@ -31,16 +28,14 @@ def build_retriever(llm):
 
     base_retriever = vectorstore.as_retriever(
         search_type="mmr",
-        search_kwargs={"k": 10, "fetch_k": 20, "lambda_mult": 0.6},
+        search_kwargs={"k": 5, "fetch_k": 10, "lambda_mult": 0.6},
     )
 
     multi_query_retriever = MultiQueryRetriever.from_llm(
         retriever=base_retriever,
         llm=llm,
     )
-    
-    # Reranker disabled for cloud deployment (FlagEmbedding too heavy)
-    # MMR already ensures diverse, high quality results
+
     return multi_query_retriever, vectorstore
 
 def retrieve_with_parent(docs):
