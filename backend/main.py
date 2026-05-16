@@ -28,17 +28,29 @@ app.add_middleware(
 )
 
 
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    groq_api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0,
-    http_client=None,
-)
+try:
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile",
+        groq_api_key=os.getenv("GROQ_API_KEY"),
+        temperature=0,
+        http_client=None,
+    )
+    print("✅ LLM ready!")
+except Exception as e:
+    print(f"❌ LLM failed: {e}")
+    import traceback
+    traceback.print_exc()
 
 # ── Retriever ──
-print("⏳ Loading retriever...")
-retriever, vectorstore = build_retriever(llm)
-print("✅ Retriever ready!")
+try:
+    print("⏳ Loading retriever...")
+    retriever, vectorstore = build_retriever(llm)
+    print("✅ Retriever ready!")
+except Exception as e:
+    print(f"❌ Retriever failed: {e}")
+    import traceback
+    traceback.print_exc()
+    retriever, vectorstore = None, None
 
 # ── RAG tool ──
 @tool
