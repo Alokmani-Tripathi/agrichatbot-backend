@@ -28,46 +28,41 @@ app.add_middleware(
 )
 
 
-    # ── LLM with 8-model fallback ──
-def get_llm():
+# ── LLM with 8-model fallback ──
+failed_models = set()  # tracks which models have failed
+
+def get_llm(exclude: set = set()):
     models = [
-        # Priority 1 — Groq LLaMA 3.3 70b (best quality + fastest)
         ("Groq LLaMA-3.3-70b", lambda: ChatGroq(
             model="llama-3.3-70b-versatile",
             groq_api_key=os.getenv("GROQ_API_KEY"),
             temperature=0,
         )),
-        # Priority 2 — Gemini 2.0 Flash (cross-provider, excellent quality)
         ("Gemini 2.0 Flash", lambda: ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0,
         )),
-        # Priority 3 — Groq LLaMA3 70b (separate quota from #1)
         ("Groq LLaMA3-70b", lambda: ChatGroq(
             model="llama3-70b-8192",
             groq_api_key=os.getenv("GROQ_API_KEY"),
             temperature=0,
         )),
-        # Priority 4 — Groq Gemma2 9b (500K tokens/day quota)
         ("Groq Gemma2-9b", lambda: ChatGroq(
             model="gemma2-9b-it",
             groq_api_key=os.getenv("GROQ_API_KEY"),
             temperature=0,
         )),
-        # Priority 5 — Groq Mixtral (500K tokens/day quota)
         ("Groq Mixtral", lambda: ChatGroq(
             model="mixtral-8x7b-32768",
             groq_api_key=os.getenv("GROQ_API_KEY"),
             temperature=0,
         )),
-        # Priority 6 — Gemini 1.5 Flash (extra Google buffer)
         ("Gemini 1.5 Flash", lambda: ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0,
         )),
-        # Priority 7 — HF Qwen 2.5 72B (unlimited)
         ("HF Qwen2.5-72B", lambda: ChatHuggingFace(
             llm=HuggingFaceEndpoint(
                 repo_id="Qwen/Qwen2.5-72B-Instruct",
@@ -76,7 +71,6 @@ def get_llm():
                 max_new_tokens=1024,
             )
         )),
-        # Priority 8 — HF LLaMA 3.3 70B (unlimited, last resort)
         ("HF LLaMA-3.3-70B", lambda: ChatHuggingFace(
             llm=HuggingFaceEndpoint(
                 repo_id="meta-llama/Llama-3.3-70B-Instruct",
@@ -88,6 +82,9 @@ def get_llm():
     ]
 
     for name, model_fn in models:
+        if name in exclude:
+            print(f"⏭️ Skipping {name} (previously failed)")
+            continue
         try:
             llm = model_fn()
             print(f"✅ LLM ready: {name}")
@@ -98,7 +95,7 @@ def get_llm():
 
     raise RuntimeError("❌ All LLMs failed!")
 
-llm, active_model = get_llm()
+llm, active_model = get_llm()    
 
 
 
@@ -256,8 +253,9 @@ async def chat(request: ChatRequest):
         # Rate limit hit — switch to next model automatically
         if "rate_limit" in error_msg or "429" in error_msg or "quota" in error_msg:
             print(f"⚠️ Rate limit on {active_model} — switching model...")
+            failed_models.add(active_model)
             try:
-                llm, active_model = get_llm()
+                llm, active_model = get_llm(exclude=failed_models)
                 agent = create_tool_calling_agent(llm, all_tools, prompt)
                 agent_executor = AgentExecutor(
                     agent=agent,
