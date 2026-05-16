@@ -14,6 +14,7 @@ def get_embeddings():
         model_name=EMBED_MODEL,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
+        cache_folder="/app/model_cache",  # uses model pre-downloaded at build time
     )
 
 def get_vectorstore(embeddings):
