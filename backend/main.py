@@ -517,6 +517,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: Optional[List[str]] = []
+    model_used: Optional[str] = None
 
 # ── Extract Sources Helper ──
 def extract_sources(result: dict) -> str:
@@ -573,7 +574,10 @@ async def chat(request: ChatRequest):
             "chat_history": history,
         })
         answer = result.get("output", "Sorry, I could not process your request.")
-        return ChatResponse(answer=answer + extract_sources(result))
+        return ChatResponse(
+            answer=answer + extract_sources(result),
+            model_used=active_model
+        )
 
     except Exception as e:
         error_msg = str(e)
@@ -594,7 +598,10 @@ async def chat(request: ChatRequest):
                     "chat_history": [],
                 })
                 answer = result.get("output", "Sorry, try again.")
-                return ChatResponse(answer=answer + extract_sources(result))
+                return ChatResponse(
+                    answer=answer + extract_sources(result),
+                    model_used=active_model
+                )
 
             except RuntimeError:
                 return ChatResponse(

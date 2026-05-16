@@ -37,6 +37,8 @@ def build_retriever(llm):
     return multi_query_retriever, vectorstore
 
 def retrieve_with_parent(docs):
+    if not docs:
+        return []
     expanded     = []
     seen_parents = set()
     for doc in docs:
