@@ -136,6 +136,12 @@ def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
+        if retriever is None:
+            result = agent_executor.invoke({
+                "input": request.message,
+                "chat_history": [],
+            })
+            return ChatResponse(answer=result.get("output", "Knowledge base unavailable."))
         history = []
         for msg in request.chat_history[-6:]:
             if msg.role == "user":
