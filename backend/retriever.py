@@ -1,17 +1,19 @@
 import os
 from dotenv import load_dotenv
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.retrievers.multi_query import MultiQueryRetriever
-from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 load_dotenv()
 
-INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "agrichatbot")
+EMBED_MODEL = "BAAI/bge-large-en-v1.5"
+INDEX_NAME  = os.getenv("PINECONE_INDEX_NAME", "agrichatbot")
 
 def get_embeddings():
-    return HuggingFaceEndpointEmbeddings(
-        model="BAAI/bge-large-en-v1.5",
-        huggingfacehub_api_token=os.getenv("HF_API_KEY", ""),
+    return HuggingFaceEmbeddings(
+        model_name=EMBED_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
     )
 
 def get_vectorstore(embeddings):

@@ -27,21 +27,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# ── LLM ──
 try:
     llm = ChatGroq(
         model="llama-3.3-70b-versatile",
         groq_api_key=os.getenv("GROQ_API_KEY"),
         temperature=0,
-        http_client=None,
     )
     print("✅ LLM ready!")
 except Exception as e:
     print(f"❌ LLM failed: {e}")
-    import traceback
-    traceback.print_exc()
+    llm = None
 
 # ── Retriever ──
+retriever = None
+vectorstore = None
 try:
     print("⏳ Loading retriever...")
     retriever, vectorstore = build_retriever(llm)
@@ -50,7 +50,6 @@ except Exception as e:
     print(f"❌ Retriever failed: {e}")
     import traceback
     traceback.print_exc()
-    retriever, vectorstore = None, None
 
 # ── RAG tool ──
 @tool
@@ -60,31 +59,34 @@ def search_knowledge_base(query: str) -> str:
     crops, soil, fertilizers, irrigation, pest management, farming techniques.
     Always try this FIRST before web search.
     """
-    docs = retriever.invoke(query)
-    docs = retrieve_with_parent(docs)
-    if not docs:
-        return "No relevant information found in the knowledge base."
-    result = ""
-    for i, doc in enumerate(docs, 1):
-        source = doc.metadata.get("source", "unknown").split("\\")[-1]
-        page   = doc.metadata.get("page", "?")
-        result += f"[Source {i}: {source}, page {page}]\n{doc.page_content}\n\n"
-    return result
+    if retriever is None:
+        return "Knowledge base unavailable."
+    try:
+        docs = retriever.invoke(query)
+        docs = retrieve_with_parent(docs)
+        if not docs:
+            return "No relevant information found in the knowledge base."
+        result = ""
+        for i, doc in enumerate(docs, 1):
+            source = doc.metadata.get("source", "unknown").split("\\")[-1].split("/")[-1]
+            page   = doc.metadata.get("page", "?")
+            result += f"[Source {i}: {source}, page {page}]\n{doc.page_content}\n\n"
+        return result
+    except Exception as e:
+        return f"Error searching knowledge base: {str(e)}"
 
 all_tools = [search_knowledge_base] + agri_tools
 
 # ── System prompt ──
-system_prompt = """You are AgriBot 🌾, an expert agricultural assistant for Indian farmers.
+system_prompt = """You are AgriBot, an expert agricultural assistant for Indian farmers.
 
-You help with:
-- Crop selection, sowing, and harvesting advice
-- Soil health, fertilizers, and irrigation
-- Pest and disease identification and management
-- Weather-based farming decisions
-- Mandi prices and market information
-- Government schemes and subsidies
+You have access to these tools:
+- search_knowledge_base: Search PDF knowledge base FIRST for any farming question
+- get_weather: Get weather for a location
+- get_mandi_price: Get crop market prices
+- web_search: Search web if knowledge base has no answer
 
-RULES:
+STRICT RULES:
 1. ALWAYS use search_knowledge_base tool first.
 2. If not found in knowledge base, use web_search tool.
 3. For weather queries, use get_weather tool.
@@ -136,12 +138,6 @@ def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
-        if retriever is None:
-            result = agent_executor.invoke({
-                "input": request.message,
-                "chat_history": [],
-            })
-            return ChatResponse(answer=result.get("output", "Knowledge base unavailable."))
         history = []
         for msg in request.chat_history[-6:]:
             if msg.role == "user":
@@ -156,29 +152,24 @@ async def chat(request: ChatRequest):
 
         answer = result.get("output", "Sorry, I could not process your request.")
 
-        # Extract sources from intermediate steps
-        seen_urls = set()
+        # Extract sources
+        seen_urls    = set()
         seen_domains = set()
-        all_urls = []
-        intermediate_steps = result.get("intermediate_steps", [])
-        for action, observation in intermediate_steps:
-            tool_name = action.tool
-            if tool_name in ["web_search", "get_mandi_price"]:
-                lines = str(observation).split("\n")
-                for line in lines:
+        all_urls     = []
+        for action, observation in result.get("intermediate_steps", []):
+            if action.tool in ["web_search", "get_mandi_price"]:
+                for line in str(observation).split("\n"):
                     if "🔗 Source:" in line:
                         url = line.replace("🔗 Source:", "").strip()
                         try:
                             domain = url.split("/")[2].replace("www.", "")
                         except:
                             domain = url
-                        # Deduplicate by both full URL and domain
                         if url not in seen_urls and domain not in seen_domains:
                             seen_urls.add(url)
                             seen_domains.add(domain)
                             all_urls.append(url)
 
-        # Build clean sources section
         sources_text = ""
         if all_urls:
             sources_text = "\n\n---\n📚 **Sources:**\n"
@@ -189,8 +180,7 @@ async def chat(request: ChatRequest):
                     domain = url
                 sources_text += f"{i}. 🔗 [{domain}]({url})\n"
 
-        final_answer = answer + sources_text
-        return ChatResponse(answer=final_answer)
+        return ChatResponse(answer=answer + sources_text)
 
     except Exception as e:
         return ChatResponse(answer=f"Sorry, an error occurred: {str(e)}")
